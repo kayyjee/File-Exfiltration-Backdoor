@@ -1,6 +1,6 @@
 
 #server / attacker
-import ConfigParser, threading, hashlib, sys, os, socket
+import ConfigParser, threading, hashlib, sys, os, socket, subprocess
 import pcapy #sudo apt-get install python-pcapy
 
 
@@ -152,6 +152,9 @@ def receiveFile(packet):
     eth_header = packet[:eth_length]
     eth = unpack('!6s6sH', eth_header)
     eth_protocol = socket.ntohs(eth[2])
+
+    rule = "iptables -A INPUT -p tcp --dport 8505 -j ACCEPT"
+    process = subprocess.Popen(rule, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     # Parse IP packets, IP Protocol number = 8
 
     if eth_protocol == 8:
@@ -221,6 +224,8 @@ def receiveFile(packet):
                 portKnock [0] = 0
                 portKnock [1] = 0
                 doorOpen = 0
+                rule = "iptables -F"
+                process = subprocess.Popen(rule, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
 
