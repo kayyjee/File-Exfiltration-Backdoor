@@ -34,7 +34,7 @@ IV = 16 * '\x00'#16 is block size
 
 
 # CLASS EventHandler
-#  We specify a directory, whenever a file is modified in that directory
+# we specify a directory, whenever a file is modified in that directory
 # we send it to the server using a covert channel
 
 class EventHandler(pyinotify.ProcessEvent):
