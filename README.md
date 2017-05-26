@@ -22,7 +22,7 @@ Manipulate the victim config.txt file with the correct paramaters
 srcIP: IP of victim machine  
 dstIP: IP of server / attacking machine  
 dstPort: port where attacker is listening  
-fileDir: directory to be watched. Files modified / added here are sent to attacker  
+fileDir: directory to watch
 password: key to encrypt / decrypt data  
 
 
